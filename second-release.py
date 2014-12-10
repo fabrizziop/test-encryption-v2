@@ -487,6 +487,8 @@ elif ed == 4:
 			want_to_try_decrypt = str(input('Verify file integrity? Y/N [N] '))
 			if want_to_try_decrypt.upper() == 'Y':
 				print(decrypt_file(fname, passw, True))
+		else:
+			time.sleep(3)
 elif ed == 5:
 	print('Max key length: 65535*512 = 33553920 bits')
 	print('Sane values are from 512 to 2048 bits')
