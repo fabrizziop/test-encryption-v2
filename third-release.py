@@ -6,6 +6,7 @@ import ctypes
 import hmac
 import os
 import getpass
+from math import ceil
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Cipher import AES
@@ -66,7 +67,7 @@ def generate_header_contents(f_len, password, ver, key_amount, pbkdf2_iterations
 	header = []
 	if key_amount > 65535 or len(ver) != 2 or pbkdf2_iterations > 65535:
 		return "F"
-	print('key amount:',key_amount)
+	#print('key amount:',key_amount)
 	key_amount_str = format(key_amount, '02x')
 	pbkdf2_real_iters = pbkdf2_iterations * 1000
 	pbkdf2_str = format(pbkdf2_iterations, '02x')
@@ -76,12 +77,12 @@ def generate_header_contents(f_len, password, ver, key_amount, pbkdf2_iterations
 		pbkdf2_str = "0" + pbkdf2_str
 	header.append(key_amount_str)
 	header.append(pbkdf2_str)
-	print('pbkdf2 iters:',pbkdf2_real_iters)
-	print(header)
+	#print('pbkdf2 iters:',pbkdf2_real_iters)
+	#print(header)
 	final_key_split = []
 	for i in range(0,key_amount):
 		cs = init_key_generation(512)
-		print('salt:',cs)
+		#print('salt:',cs)
 		ck = init_key_generation(512)
 		final_key_split.append(ck)
 		#print(hashlib.pbkdf2_hmac('sha512', password.encode(), bytes.fromhex(cs), 10000))
@@ -89,20 +90,20 @@ def generate_header_contents(f_len, password, ver, key_amount, pbkdf2_iterations
 		ciphered_key = do_xor_on_hex(k_xor_mask,ck)
 		header.append(cs)
 		header.append(ciphered_key)
-	print('version:',ver)
-	print('length:',f_len)
+	#print('version:',ver)
+	#print('length:',f_len)
 	header.append(ver)
 	header.append(f_len)
 	hmac_salt = header[2]
 	#print(hmac_salt)
-	k_pbkdf_hmac = hashlib.pbkdf2_hmac('sha512', password.encode(), bytes.fromhex(hmac_salt), pbkdf2_real_iters)
+	k_pbkdf_hmac = hashlib.pbkdf2_hmac('sha512', password.encode(), bytes.fromhex(hmac_salt), pbkdf2_real_iters*4)
 	n_head = "".join(header)
 	#print(n_head)
 	hmac_val = hmac.new(k_pbkdf_hmac, n_head.encode(), hashlib.sha512).hexdigest()
 	n_head_2 = []
 	n_head_2.append(n_head)
 	n_head_2.append(hmac_val)
-	print('key:', "".join(final_key_split))
+	#print('key:', "".join(final_key_split))
 	return "".join(n_head_2), "".join(final_key_split)
 	
 	
@@ -110,22 +111,22 @@ def read_header_contents(header_str, password):
 	key_amount = int(header_str[0:4],16)
 	pbkdf2_iterations = int(header_str[4:8],16)
 	pbkdf2_real_iters = pbkdf2_iterations * 1000
-	print('key amount:',key_amount)
-	print('pbkdf2 iters:',pbkdf2_real_iters)
+	#print('key amount:',key_amount)
+	#print('pbkdf2 iters:',pbkdf2_real_iters)
 	hmac_in_hdr = header_str[-128:]
 	#print(header_str[4:132])
-	k_pbkdf_hmac = hashlib.pbkdf2_hmac('sha512', password.encode(), bytes.fromhex(header_str[8:136]), pbkdf2_real_iters)
+	k_pbkdf_hmac = hashlib.pbkdf2_hmac('sha512', password.encode(), bytes.fromhex(header_str[8:136]), pbkdf2_real_iters*4)
 	hmac_val = hmac.new(k_pbkdf_hmac, header_str[:-128].encode(), hashlib.sha512).hexdigest()
 	if hmac_in_hdr == hmac_val:
 		hmac_validated = True
 	else:
 		hmac_validated = False
-	print('read hmac:',hmac_in_hdr)
-	print('calculated hmac:', hmac_val)
+	#print('read hmac:',hmac_in_hdr)
+	#print('calculated hmac:', hmac_val)
 	final_key = []
 	for i in range(0,key_amount):
 		cs = header_str[(i*256)+8:(i*256)+136]
-		print('salt:',cs)
+		#print('salt:',cs)
 		ck = header_str[(i*256)+136:(i*256)+264]
 		#print(hashlib.pbkdf2_hmac('sha512', password.encode(), bytes.fromhex(cs), 10000))
 		k_xor_mask = bytes.decode(binascii.hexlify(hashlib.pbkdf2_hmac('sha512', password.encode(), bytes.fromhex(cs), pbkdf2_real_iters)))
@@ -133,10 +134,10 @@ def read_header_contents(header_str, password):
 		final_key.append(deciphered_key)
 	ver = header_str[(key_amount*256)+8:(key_amount*256)+10]
 	length = header_str[(key_amount*256)+10:-128]
-	print('version:',ver)
-	print('length:',length)
+	#print('version:',ver)
+	#print('length:',length)
 	fk = "".join(final_key)
-	print('key:', fk)
+	#print('key:', fk)
 	return fk, ver, length, hmac_validated
 	
 	
@@ -148,6 +149,24 @@ def read_header_contents(header_str, password):
 		# self.current_state = bytearray(hashlib.sha512(initk).digest())
 		# return bytearray(hashlib.sha512(byte_transpose(initk)).digest()) 
 		
+def int_to_big_endian(intg, pad_to=16):
+	m_big = 0b11111111
+	big_endian_int = bytearray()
+	times_to_iterate = ceil(len(bin(intg)[2:])/8)
+	for i in range(0,times_to_iterate):
+		big_endian_int.append((intg >> (i*8)) & m_big)
+	while len(big_endian_int) < pad_to:
+		big_endian_int.append(0)
+	big_endian_int.reverse()
+	return big_endian_int
+
+def big_endian_to_int(big_endian_barr):
+	big_endian = big_endian_barr
+	cur_num = 0
+	for i in range(0,len(big_endian)):
+		cur_num = (cur_num << 8) | big_endian[i]
+	return cur_num
+
 class sha512_efb(object):
 	def __init__(self, init_key):
 		self.current_key = bytearray.fromhex(init_key)
@@ -170,7 +189,37 @@ class sha512_efb_pfb(object):
 		self.current_output_bytes = bytearray(hashlib.sha512(byte_transpose(self.current_thing_to_hash)).digest())
 		return self.current_output_bytes
 		
-
+class aes256_ede3_ctr(object):
+		#key must be 1024 bit
+	def __init__(self,init_key):
+		bytes_init_key = bytearray.fromhex(init_key)
+		k1 = bytes_init_key[:32]
+		k2 = bytes_init_key[32:64]
+		k3 = bytes_init_key[64:96]
+		k4 = bytes_init_key[96:128]
+		aes_first = hashlib.sha256(k1+k4).digest()
+		aes_second = hashlib.sha256(k2+k4).digest()
+		aes_third = hashlib.sha256(k3+k4).digest()
+		self.first_aes = AES.new(aes_first,AES.MODE_ECB)
+		self.second_aes = AES.new(aes_second,AES.MODE_ECB)
+		self.third_aes = AES.new(aes_third,AES.MODE_ECB)
+		aes_iv = hashlib.md5(hashlib.sha256(hashlib.sha512(k1+k2+k3+k4).digest()).digest()).digest()
+		#print('K1:',list(aes_first))
+		#print('K2:',list(aes_second))
+		#print('K3:',list(aes_third))
+		print('IV:',list(aes_iv))
+		self.to_encrypt = big_endian_to_int(aes_iv)
+	def get_bytes_to_xor(self):
+		bytes_to_xor = bytearray()
+		for i in range(0,4):
+			cur_bytes_to_encrypt = bytes(int_to_big_endian(self.to_encrypt))
+			self.to_encrypt = (self.to_encrypt + 1) % (2**128)
+			#print(list(cur_bytes_to_encrypt))
+			e1 = self.first_aes.encrypt(cur_bytes_to_encrypt)
+			e2 = self.second_aes.decrypt(e1)
+			e3 = self.third_aes.encrypt(e2)
+			bytes_to_xor.extend(e3)
+		return bytes_to_xor
 
 def encrypt_file(filename,passtouse,ver,key_par, iter_k, mode="N", bytein=b"", hdrmode="PSK"):
 	if mode == "N":
@@ -205,13 +254,10 @@ def encrypt_file(filename,passtouse,ver,key_par, iter_k, mode="N", bytein=b"", h
 		else:
 			print('Header overwritten at your request!')
 	ftoe_r_l = len(ftoe_r)
-	print(len(ftoe_r))
+	#print("File length:",len(ftoe_r))
 	timestopad = 64-(ftoe_r_l%64)
 	for i in range(0,timestopad):
 		ftoe_r.append(rng.randint(0,255))
-	f_hash = hashlib.sha512(ftoe_r[0:ftoe_r_l]).digest()
-	ftoe_r.extend(f_hash)
-	print(len(ftoe_r))
 	if hdrmode == "PSK":
 		headercontent, tkey = generate_header_contents(format(ftoe_r_l, '02x'),passtouse,ver,key_par, iter_k)
 		hfi = open(nfname,'w')
@@ -236,6 +282,13 @@ def encrypt_file(filename,passtouse,ver,key_par, iter_k, mode="N", bytein=b"", h
 		rsasimplehead.append(format(ftoe_r_l, '02x'))
 		rsaheaderjoined = "".join(rsasimplehead)
 		rsaheaderbytes = rsaheaderjoined.encode()
+	tkey_bytes = bytes.fromhex(tkey)
+	hmackey_enc = hashlib.sha512(bytearray(hashlib.sha512(tkey_bytes).digest())+bytearray(hashlib.sha256(tkey_bytes).digest())+bytearray(hashlib.md5(tkey_bytes).digest())).digest()
+	print("HMAC key:",bytes.decode(binascii.hexlify(hmackey_enc)))
+	f_hash = hmac.new(hmackey_enc,msg=ftoe_r,digestmod=hashlib.sha512).digest()
+	print("HMAC:",bytes.decode(binascii.hexlify(f_hash)))
+	ftoe_r.extend(f_hash)
+	#print("File+Pad+HMAC length:",len(ftoe_r))
 	ftoe_r_l = len(ftoe_r)
 	enc_file = bytearray()
 	timestoencrypt = ftoe_r_l // 64
@@ -259,6 +312,15 @@ def encrypt_file(filename,passtouse,ver,key_par, iter_k, mode="N", bytein=b"", h
 			cbx = cipher_object.get_bytes_to_xor(cfb)
 			ce = do_xor_on_bytes(cc,cbx)
 			cfb = hashlib.sha512(cc).digest()
+			enc_file.extend(ce)
+			if i % csc == 0:
+				print(str(int(round((i*100/timestoencrypt),0)))+'%')
+	elif ver == '03':
+		cipher_object = aes256_ede3_ctr(tkey)
+		for i in range(0,timestoencrypt):
+			cc = ftoe_r[(i*64):(i*64)+64]
+			cbx = cipher_object.get_bytes_to_xor()
+			ce = do_xor_on_bytes(cc,cbx)
 			enc_file.extend(ce)
 			if i % csc == 0:
 				print(str(int(round((i*100/timestoencrypt),0)))+'%')
@@ -342,7 +404,21 @@ def decrypt_file(filename,passtouse, test_decrypt, mode="N", hdrmode="PSK", hdrc
 			d_file.extend(cd)
 			if i % csc == 0:
 				print(str(int(round((i*100/timestodecrypt),0)))+'%')
-	fcalc_hash = hashlib.sha512(d_file[0:length]).digest()
+	elif ver == '03':
+		cipher_object = aes256_ede3_ctr(key)
+		for i in range(0,timestodecrypt):
+			ce = efile_r[(i*64):(i*64)+64]
+			cbx = cipher_object.get_bytes_to_xor()
+			cd = do_xor_on_bytes(ce,cbx)
+			d_file.extend(cd)
+			if i % csc == 0:
+				print(str(int(round((i*100/timestodecrypt),0)))+'%')
+	key_bytes = bytes.fromhex(key)
+	hmackey_enc = hashlib.sha512(bytearray(hashlib.sha512(key_bytes).digest())+bytearray(hashlib.sha256(key_bytes).digest())+bytearray(hashlib.md5(key_bytes).digest())).digest()
+	print("HMAC key:",bytes.decode(binascii.hexlify(hmackey_enc)))
+	fcalc_hash = hmac.new(hmackey_enc,msg=d_file[:-64],digestmod=hashlib.sha512).digest()
+	print("HMAC CALC:",bytes.decode(binascii.hexlify(fcalc_hash)))
+	print("HMAC READ:",bytes.decode(binascii.hexlify(d_file[-64:])))
 	print('time: ', str(time.time()-time_st))
 	autoremove = True
 	if test_decrypt == True:
@@ -384,7 +460,7 @@ def change_password(filename,password_old,password_new):
 	pbkdf2_iterations = int(header_str[4:8],16)
 	pbkdf2_real_iters = pbkdf2_iterations * 1000
 	hmac_in_hdr = header_str[-128:]
-	k_pbkdf_hmac = hashlib.pbkdf2_hmac('sha512', password_old.encode(), bytes.fromhex(header_str[8:136]), pbkdf2_real_iters)
+	k_pbkdf_hmac = hashlib.pbkdf2_hmac('sha512', password_old.encode(), bytes.fromhex(header_str[8:136]), pbkdf2_real_iters*4)
 	hmac_val = hmac.new(k_pbkdf_hmac, header_str[:-128].encode(), hashlib.sha512).hexdigest()
 	if hmac_in_hdr != hmac_val:
 		hmac_validated = False
@@ -413,7 +489,7 @@ def change_password(filename,password_old,password_new):
 	new_header.append(ver)
 	new_header.append(length)
 	f_header = "".join(new_header)
-	k_pbkdf_hmac_n = hashlib.pbkdf2_hmac('sha512', password_new.encode(), bytes.fromhex(f_header[8:136]), pbkdf2_real_iters)
+	k_pbkdf_hmac_n = hashlib.pbkdf2_hmac('sha512', password_new.encode(), bytes.fromhex(f_header[8:136]), pbkdf2_real_iters*4)
 	hmac_val_n = hmac.new(k_pbkdf_hmac_n, f_header.encode(), hashlib.sha512).hexdigest()
 	nh = []
 	nh.append(f_header)
@@ -561,6 +637,36 @@ def encrypt_sha512v2():
 		print('File to encrypt not found.')
 		time.sleep(3)
 
+		
+def encrypt_aes_ede3_ctr():
+	fname = input('File name to encrypt: ')
+	e_p_t_flag = False
+	try:
+		e_p_t = open(fname, 'r')
+		e_p_t_flag = True
+		e_p_t.close()
+	except FileNotFoundError:
+		pass
+	if e_p_t_flag == True:
+		pass_ok = False
+		while pass_ok == False:
+			passw = getpass.getpass('Password: ')
+			passw_check = getpass.getpass('Confirm password: ')
+			if passw == passw_check:
+				pass_ok = True
+			else:
+				print("Passwords don't match, please retry.")
+		it_amount = 1000
+		try:
+			it_amount = int(input('PBKDF2 Iterations (X > 0) = 1000 * X: [1000] '))
+		except ValueError:
+			pass
+		it_amount = max(1,it_amount)
+		encrypt_file(fname,passw,'03',2, it_amount)
+	else:
+		print('File to encrypt not found.')
+		time.sleep(3)
+
 def encrypt_rsa_sha512v2(bytestoencrypt):
 	fname = input('File name to encrypt: ')
 	pass_ok = False
@@ -584,6 +690,24 @@ def encrypt_rsa_sha512v2(bytestoencrypt):
 		pass
 	it_amount = max(1,it_amount)
 	encrypt_file(fname,passw,'02',k_am, it_amount, mode="R", bytein=bytestoencrypt)
+	
+def encrypt_rsa_aes_ede3_ctr(bytestoencrypt):
+	fname = input('File name to encrypt: ')
+	pass_ok = False
+	while pass_ok == False:
+		passw = getpass.getpass('Password: ')
+		passw_check = getpass.getpass('Confirm password: ')
+		if passw == passw_check:
+			pass_ok = True
+		else:
+			print("Passwords don't match, please retry.")
+	it_amount = 1000
+	try:
+		it_amount = int(input('PBKDF2 Iterations (X > 0) = 1000 * X: [1000] '))
+	except ValueError:
+		pass
+	it_amount = max(1,it_amount)
+	encrypt_file(fname,passw,'03',2, it_amount, mode="R", bytein=bytestoencrypt)
 
 def encrypt_rsa_file_sha512v2():
 	fname = input('File name to encrypt: ')
@@ -599,6 +723,24 @@ def encrypt_rsa_file_sha512v2():
 		it_amount = 1000
 		k_am = 1
 		keytorsaencrypt = encrypt_file(fname,passw,'02',k_am, it_amount, hdrmode="RSA")
+		return keytorsaencrypt, fname
+	else:
+		print('File to encrypt not found.')
+		time.sleep(3)
+def encrypt_rsa_file_aes_ede3_ctr():
+	fname = input('File name to encrypt: ')
+	e_p_t_flag = False
+	try:
+		e_p_t = open(fname, 'r')
+		e_p_t_flag = True
+		e_p_t.close()
+	except FileNotFoundError:
+		pass
+	if e_p_t_flag == True:
+		passw = ""
+		it_amount = 1000
+		k_am = 2
+		keytorsaencrypt = encrypt_file(fname,passw,'03',k_am, it_amount, hdrmode="RSA")
 		return keytorsaencrypt, fname
 	else:
 		print('File to encrypt not found.')
@@ -656,7 +798,19 @@ class rsa_keystore(object):
 				if export_priv == True:
 					kte_d = kte_ac.d
 					kte_str = kte_str + "," + str(kte_d)
-			encrypt_rsa_sha512v2(kte_str.encode())
+			print('2: SHA-512 with key rotation, hash chain and plaintext feedback')
+			print('3: 3AES-EDE in CTR mode with independent keys and IV. 512-bit eq.')
+			ver_rsa = 3
+			try:
+				ver_rsa = int(input('Version: [3] '))
+			except ValueError:
+				pass
+			if ver_rsa == 2:
+				encrypt_rsa_sha512v2(kte_str.encode())
+			elif ver_rsa == 3:
+				encrypt_rsa_aes_ede3_ctr(kte_str.encode())
+			else:
+				print('Try again!')
 		except IndexError:
 			print("Key not in keystore.")
 	def import_key(self):
@@ -682,7 +836,19 @@ class rsa_keystore(object):
 		ktu = force_integer_input("Key to use:")-1
 		try:
 			ktu_ac = self.key_list[ktu]
-			kte, fnhd = encrypt_rsa_file_sha512v2()
+			print('2: SHA-512 with key rotation, hash chain and plaintext feedback')
+			print('3: 3AES-EDE in CTR mode with independent keys and IV. 512-bit eq.')
+			ver_rsa = 3
+			try:
+				ver_rsa = int(input('Version: [3] '))
+			except ValueError:
+				pass
+			if ver_rsa == 2:
+				kte, fnhd = encrypt_rsa_file_sha512v2()
+			elif ver_rsa == 3:
+				kte, fnhd = encrypt_rsa_file_aes_ede3_ctr()
+			else:
+				print('Try again!')
 			print(kte)
 			fnhd = fnhd + ".rsaheader"
 			rsacipher = PKCS1_OAEP.new(ktu_ac,hashAlgo=SHA512)
@@ -731,15 +897,18 @@ while all_done == False:
 	if ed == 1:
 		print('1: SHA-512 with key rotation and hash chain feedback')
 		print('2: SHA-512 with key rotation, hash chain and plaintext feedback')
-		ver = 2
+		print('3: 3AES-EDE in CTR mode with independent keys and IV. 512-bit eq.')
+		ver = 3
 		try:
-			ver = int(input('Version: [2] '))
+			ver = int(input('Version: [3] '))
 		except ValueError:
 			pass
 		if ver == 1:
 			encrypt_sha512v1()
 		elif ver == 2:
 			encrypt_sha512v2()
+		elif ver == 3:
+			encrypt_aes_ede3_ctr()
 	elif ed == 2:
 		fname = input('File name to decrypt: ')
 		passw = getpass.getpass('Password: ')
@@ -781,7 +950,7 @@ while all_done == False:
 			length = header_str[(key_amount*256)+10:-128]
 			if p_flag == True:
 					hmac_in_hdr = header_str[-128:]
-					k_pbkdf_hmac = hashlib.pbkdf2_hmac('sha512', passw.encode(), bytes.fromhex(header_str[8:136]), pbkdf2_real_iters)
+					k_pbkdf_hmac = hashlib.pbkdf2_hmac('sha512', passw.encode(), bytes.fromhex(header_str[8:136]), pbkdf2_real_iters*4)
 					hmac_val = hmac.new(k_pbkdf_hmac, header_str[:-128].encode(), hashlib.sha512).hexdigest()
 					if hmac_in_hdr == hmac_val:
 						print('The header is OK')
