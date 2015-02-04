@@ -207,7 +207,7 @@ class aes256_ede3_ctr(object):
 		#print('K1:',list(aes_first))
 		#print('K2:',list(aes_second))
 		#print('K3:',list(aes_third))
-		print('IV:',list(aes_iv))
+		#print('IV:',list(aes_iv))
 		self.to_encrypt = big_endian_to_int(aes_iv)
 	def get_bytes_to_xor(self):
 		bytes_to_xor = bytearray()
