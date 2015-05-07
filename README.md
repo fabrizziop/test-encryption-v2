@@ -1,6 +1,13 @@
 test-encryption-v2
 ==================
 
+-----------------------------------------------------------------------
+This tool is deprecated and INSECURE. Only useful as a toy.
+
+Consider using https://github.com/fabrizziop/encryption-modular
+
+-----------------------------------------------------------------------
+
 SHA-512-based cipher. Python 3.4
 
 A key of the size you specify is created and stored in the header file in 512-bit slices. Each slice has its own salt, so you
